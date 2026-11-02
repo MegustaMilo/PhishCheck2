@@ -2,7 +2,17 @@
 # Run in the BasicTests notebook AFTER the helper cells (canon, root_domain, extract_domain,
 # TRANCO_SET, SHORTENER_DOMAINS must exist). Upload the CSVs to Colab first.
 import os, sqlite3
+import joblib
 import pandas as pd
+
+import phish_utils as pu
+from phish_utils import canon, root_domain, extract_domain
+
+art = joblib.load("phishcheck_final.joblib")
+pu.TRANCO_SET = art["tranco"]            # same setup as app.py
+pu.SHORTENER_DOMAINS = art["shorteners"]
+TRANCO_SET = pu.TRANCO_SET
+SHORTENER_DOMAINS = pu.SHORTENER_DOMAINS
 
 # (file, url column, label column, label value that means PHISH)
 SOURCES = [
@@ -62,7 +72,7 @@ con.close()
 print("size MB:", round(os.path.getsize(DB_FILE) / 1e6, 1), "(GitHub web upload limit is 25 MB)")
 
 try:
-    from google.colab import files
+    from google.colab import files # type: ignore
     files.download(DB_FILE)
 except ImportError:
     pass
