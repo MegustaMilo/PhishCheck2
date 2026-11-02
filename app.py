@@ -36,6 +36,7 @@ def esc(x):
 CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 .stApp{background:#fffff4;color:#14213d;font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;}
+.stApp input,.stApp textarea,.stApp button,.stApp [data-baseweb]{font-family:inherit;}
 .stApp,[data-testid="stMain"]{overflow-x:hidden;}
 #MainMenu,footer,header[data-testid="stHeader"]{display:none;}
 .block-container{max-width:760px;padding:3.5rem 1rem 3rem;}
@@ -48,15 +49,24 @@ div.pc-hero h1{font-size:34px;font-weight:800;color:#0b1b33;margin:14px 0 10px;p
 div.pc-hero p{color:#4b5a75;font-size:14px;max-width:520px;margin:0 auto;line-height:1.5;}
 [data-testid="stForm"]{background:#fff;border:1px solid #dfe2e8;border-radius:12px;padding:28px;}
 [data-testid="stWidgetLabel"] p{font-weight:600;font-size:13px;color:#14213d;}
-[data-baseweb="input"],[data-baseweb="base-input"]{background:#fff;border-radius:8px;}
+[data-baseweb="input"],[data-baseweb="base-input"]{background:#fff !important;border-radius:8px;}
 [data-baseweb="input"]{border:1px solid #d5d9e2;}
-[data-testid="stTextInput"] input{color:#14213d;padding:12px 14px;}
+[data-testid="stTextInput"] input{background:#fff !important;color:#14213d !important;-webkit-text-fill-color:#14213d;padding:12px 14px;}
+[data-testid="stTextInput"] input::placeholder{color:#8a94a8 !important;-webkit-text-fill-color:#8a94a8;}
 .pc-or{display:flex;align-items:center;gap:14px;color:#8a94a8;font-size:11px;letter-spacing:.08em;margin:10px 0 14px;}
 .pc-or:before,.pc-or:after{content:"";flex:1;height:1px;background:#e3e6ec;}
 [data-testid="stFileUploaderDropzone"]{border:1.5px dashed #1f3a6b;border-radius:8px;background:#fffff4;min-height:150px;justify-content:center;padding:28px;color:#14213d;}
 [data-testid="stFileUploaderDropzone"] button{background:#fff;border:1px solid #c9cfdb;color:#14213d;border-radius:8px;}
+[data-baseweb="tab-list"]{gap:8px;}
+button[data-baseweb="tab"]{background:transparent;}
+button[data-baseweb="tab"] p{font-size:14px;font-weight:600;color:#4b5a75;}
+button[data-baseweb="tab"][aria-selected="true"] p{color:#2b5fc0;}
+[data-baseweb="tab-highlight"]{background:#2b5fc0 !important;}
+[data-baseweb="tab-border"]{background:#dfe2e8;}
+[data-baseweb="tab-panel"]{padding-top:16px;}
 .pc-note{font-size:12px;color:#5b6780;margin:12px 0 18px;}
 .pc-note b{color:#16a34a;}
+[data-testid="stElementContainer"]:has([data-testid="stFormSubmitButton"]),.stElementContainer:has(.stFormSubmitButton){width:100% !important;}
 [data-testid="stFormSubmitButton"],[data-testid="stFormSubmitButton"]>div{width:100% !important;}
 [data-testid="stFormSubmitButton"] button{width:100% !important;background:#2b5fc0;border:none;border-radius:8px;padding:12px 0;}
 [data-testid="stFormSubmitButton"] button p{color:#fff;font-weight:600;font-size:15px;}
@@ -213,12 +223,42 @@ def show(raw):
                     st.code(hop_url, language=None)
 
 
+def scan_qr_cv2(arr):
+    """Fallback decoder: OpenCV's built-in QR reader needs no system library (unlike pyzbar/libzbar)."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return {"ok": False, "data": [], "error": "not installed"}
+    a = np.asarray(arr)
+    if a.dtype != np.uint8:
+        a = a.astype(np.uint8)
+    det = cv2.QRCodeDetector()
+    data = []
+    try:
+        ok, decoded, _, _ = det.detectAndDecodeMulti(a)
+        if ok:
+            data = [d for d in decoded if d]
+    except Exception:
+        pass
+    if not data:
+        try:
+            d, _, _ = det.detectAndDecode(a)
+            if d:
+                data = [d]
+        except Exception:
+            pass
+    return {"ok": bool(data), "data": data, "error": None if data else "no QR code found"}
+
+
 def scan_qr(img):
     arr, err = sec.load_qr_image(img.getvalue())
     if err:
         st.error(err)
         return
     res = pu.scan_qr_from_image(arr)
+    if not res["ok"] and "not installed" in (res["error"] or ""):
+        res = scan_qr_cv2(arr)
     if res["ok"]:
         for link in res["data"][:MAX_QR_LINKS]:
             st.caption("QR code contains:")
@@ -230,21 +270,30 @@ def scan_qr(img):
         st.warning("No QR code was found in that image.")
 
 
-with st.form("scan_form"):
-    url = st.text_input("Paste a link to check", placeholder="https://example.com/login", max_chars=4096)
-    st.markdown('<div class="pc-or">OR DROP A QR CODE</div>', unsafe_allow_html=True)
-    img = st.file_uploader("QR code image", type=["png", "jpg", "jpeg"], label_visibility="collapsed")
-    st.markdown(h("""<div class="pc-note"><b>✓</b> Links and images are checked on the server.
-This app doesn't save them. PNG or JPG, up to 2 MB.</div>"""), unsafe_allow_html=True)
-    submitted = st.form_submit_button("Check link")
+tab_link, tab_qr = st.tabs(["Paste a link", "Scan a QR code"])
 
-if submitted:
-    if not url.strip() and img is None:
-        st.error("Paste a link or upload a QR image first.")
-    else:
+with tab_link:
+    with st.form("url_form"):
+        url = st.text_input("Paste a link to check", placeholder="https://example.com/login", max_chars=4096)
+        st.markdown('<div class="pc-note"><b>✓</b> Links are checked on the server. This app doesn\'t save them.</div>',
+                    unsafe_allow_html=True)
+        submitted_url = st.form_submit_button("Check link")
+    if submitted_url:
         if url.strip():
             show(url)
-        if img is not None:
+        else:
+            st.error("Paste a link first.")
+
+with tab_qr:
+    with st.form("qr_form"):
+        img = st.file_uploader("Upload a QR code image", type=["png", "jpg", "jpeg"])
+        st.markdown('<div class="pc-note"><b>✓</b> Images are checked on the server. This app doesn\'t save them. '
+                    "PNG or JPG, up to 2 MB.</div>", unsafe_allow_html=True)
+        submitted_qr = st.form_submit_button("Scan QR code")
+    if submitted_qr:
+        if img is None:
+            st.error("Choose an image first.")
+        else:
             scan_qr(img)
 
 st.markdown(h(f"""<div class="pc-foot">Results are likely legit (model confidence {LEGIT_CUTOFF:.0%} or higher),
